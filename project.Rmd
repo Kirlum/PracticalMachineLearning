@@ -1,0 +1,122 @@
+---
+title: "Practical Machine Learning - Course Project"
+author:
+date:
+output: html_document
+---
+
+## Introduction
+
+### Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+## Project
+In this project, we use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+The goal is to predict the labels for the test set observations. 
+
+## Packages and Data
+
+Necessary packages were loaded and also the training and testing data.
+
+```{r}
+library(lattice)
+library(ggplot2)
+library(caret)
+library(randomForest)  # for prediction with random forests
+ptrain <- read.csv("pml-training.csv")
+ptest <- read.csv("pml-testing.csv")
+
+```
+
+First the training data set was randomly split the full training data into a smaller training set (ptrain1) and a validation set (ptrain2):
+
+```{r}
+set.seed(10)
+inTrain <- createDataPartition(y=ptrain$classe, p=0.7, list=F)
+ptrain1 <- ptrain[inTrain, ]
+ptrain2 <- ptrain[-inTrain, ]
+```
+
+Variables with nearly zero variance, variables that are almost always NA, and variables that don’t make intuitive sense for prediction were removed.
+
+
+```{r}
+nzv <- nearZeroVar(ptrain1) # remove variables with nearly zero variance
+ptrain1 <- ptrain1[, -nzv]
+ptrain2 <- ptrain2[, -nzv]
+
+mostlyNA <- sapply(ptrain1, function(x) mean(is.na(x))) > 0.95 # remove variables that are almost always NA
+ptrain1 <- ptrain1[, mostlyNA==F]
+ptrain2 <- ptrain2[, mostlyNA==F]
+
+ptrain1 <- ptrain1[, -(1:5)] # remove variables that don't make intuitive sense for prediction (X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp), which happen to be the first five variables
+ptrain2 <- ptrain2[, -(1:5)]
+```
+
+## Model Building
+
+The Random Forest model was used on ptrain1, also using a 3-fold cross-validation to select optimal tuning parameters for the model.
+
+```{r}
+fitControl <- trainControl(method="cv", number=3, verboseIter=F) #3-fold CV to select optimal tuning parameters
+
+fit <- train(classe ~ ., data=ptrain1, method="rf", trControl=fitControl) # fit model on ptrain1
+plot(fit$finalModel, main="fit model on ptrain1")
+fit$finalModel
+```
+
+The numders of trees is 500 and the number of varibels tried at each split was 27.
+
+
+## Model Evaluation and Selection
+
+The fitted model was used to predict the label (“classe”) in ptrain2, and the confusion matrix is shown to compare the predicted versus the actual labels:
+
+```{r}
+preds <- predict(fit, newdata=ptrain2) 
+confusionMatrix(ptrain2$classe, preds)
+```
+
+The accuracy is 99.8%, thus the predicted accuracy for the out-of-sample error is 0.2%.
+
+The random forest model shows an accurate result.
+
+## Re-training the Selected Model
+
+Now the model is trained with the full training set (ptrain).
+
+```{r}
+nzv <- nearZeroVar(ptrain)
+ptrain <- ptrain[, -nzv]
+ptest <- ptest[, -nzv]
+
+mostlyNA <- sapply(ptrain, function(x) mean(is.na(x))) > 0.95
+ptrain <- ptrain[, mostlyNA==F]
+ptest <- ptest[, mostlyNA==F]
+
+ptrain <- ptrain[, -(1:5)]
+ptest <- ptest[, -(1:5)]
+
+fitControl <- trainControl(method="cv", number=3, verboseIter=F)
+fit <- train(classe ~ ., data=ptrain, method="rf", trControl=fitControl)
+```
+
+## Making Test Set Predictions
+
+First part is the prediction with model fit on ptrain with the ptest observations.
+Second part is the function to generate files with predictions to submit for assignment.
+```{r}
+preds <- predict(fit, newdata=ptest)
+preds <- as.character(preds) # convert predictions to character vector
+
+pml_write_files <- function(x) {
+    n <- length(x)
+    for(i in 1:n) {
+        filename <- paste0("problem_id_", i, ".txt")
+        write.table(x[i], file=filename, quote=F, row.names=F, col.names=F)
+    }
+}
+
+pml_write_files(preds) # create prediction files to submit
+```
